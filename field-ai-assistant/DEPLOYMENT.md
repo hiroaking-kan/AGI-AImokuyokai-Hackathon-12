@@ -5,7 +5,8 @@
 - GitHub: `hiroaking-kan/AGI-AImokuyokai-Hackathon-12` の `field-ai-assistant/`
 - 公開構成: Vercel（画面とAPI）→ Google Apps Script → Googleスプレッドシート
 - 初期DBは作成済み。接続先IDは所有者の設定値として管理するため、この公開リポジトリには掲載しません。
-- 公開URLの発行とGoogle側の初回認証は未完了です。実際の公開環境での動作確認はその後に行います。
+- 公開URL: https://field-ai-assistant.vercel.app/（発行済み）
+- Google側の初回認証の完了と、下記「公開後の受入確認」の結果はまだ記録していません。確認した人が結果をこの節に追記してください。
 - Cloudflare、ローカルJSON、Vercelの一時ファイルシステムを公開環境のDBとして使用しません。
 
 ## Google側の設定（所有者のアカウントで実施）

@@ -2,7 +2,9 @@
 
 カメラを向けて話しかけ、確認してから在庫を変更するハッカソンMoCです。React / Vite / TypeScriptで動作します。
 
-公開環境は **Vercel + Google Apps Script + GoogleスプレッドシートDB** 用の構成です。Cloudflareは使用しません。公開先の作成・Google初回認証はまだ完了していません。[公開手順](DEPLOYMENT.md)と[共同編集手順](CONTRIBUTING.md)を参照してください。
+公開URL: https://field-ai-assistant.vercel.app/
+
+公開環境は **Vercel + Google Apps Script + GoogleスプレッドシートDB** の構成です。Cloudflareは使用しません。[公開手順](DEPLOYMENT.md)と[共同編集手順](CONTRIBUTING.md)を参照してください。公開後の受入確認の結果は未記録です。
 
 ローカルの `npm run dev` は従来のExpress + JSONを使う独立した開発環境です。公開用DBとは同期しません。
 
