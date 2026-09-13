@@ -84,16 +84,28 @@ slide6.addImage({ path: 'C:/dev/AGI-AImokuyokai-Hackathon-12/output/screenshots/
 slide6.addText('実際の資産台帳（Google スプレッドシート）', { x: 7.52, y: 6.1, w: 5.18, h: 0.22, fontFace: 'Noto Sans JP', fontSize: 8, color: '475569', align: 'center', margin: 0 });
 slide6.addShape('line', { x: 0.65, y: 7.16, w: 12.05, h: 0, line: { color: '00A6A6', width: 1 } });
 
-// 7. Roadmap
-L.threeCards(ctx, {
-  num: '05', title: '次の展開：安全に広げ、棚卸から巡回へ',
-  subtitle: 'AIは提案まで。人が確定する今の仕組みを守って広げる。',
-  items: [
-    { icon: 'shield-check', t: 'まず、安全に', d: '品目を実数へ拡張\nログイン・権限・操作記録\n音声「はい」の精度を測定' },
-    { icon: 'clipboard-list', t: '次に、棚卸へ', d: '映った物と台帳を突合\n「ある／ない」と所在を更新\nタグ不要、声で属性を追加' },
-    { icon: 'bot', t: '10年後、巡回へ', d: 'AIグラス・常設カメラから\n工場・事務所をロボットが巡回\n記録を自動更新' }
-  ]
-});
+// 7. Roadmap (set P7_VERSION=before to reproduce the version before the P7 update)
+if (process.env.P7_VERSION === 'before') {
+  L.stepsH(ctx, {
+    num: '05', title: '10年後: 台帳は「巡回するAI社員」が更新する',
+    subtitle: '人は確認、AIは日々の記録を担う。',
+    items: [
+      { icon: 'camera', emoji: '📷', t: '今日', d: '人がカメラを持って\n話しかける' },
+      { icon: 'glasses', emoji: '👓', t: '次', d: 'AIグラス・見守りカメラで\n所在と数を常時確認' },
+      { icon: 'bot', emoji: '🤖', t: '10年後', d: 'ロボットが工場と事務所を巡回し\n台帳を自動更新' }
+    ]
+  });
+} else {
+  L.threeCards(ctx, {
+    num: '05', title: '次の展開：安全に広げ、棚卸から巡回へ',
+    subtitle: 'AIは提案まで。人が確定する今の仕組みを守って広げる。',
+    items: [
+      { icon: 'shield-check', t: 'まず、安全に', d: '品目を実数へ拡張\nログイン・権限・操作記録\n音声「はい」の精度を測定' },
+      { icon: 'clipboard-list', t: '次に、棚卸へ', d: '映った物と台帳を突合\n「ある／ない」と所在を更新\nタグ不要、声で属性を追加' },
+      { icon: 'bot', t: '10年後、巡回へ', d: 'AIグラス・常設カメラから\n工場・事務所をロボットが巡回\n記録を自動更新' }
+    ]
+  });
+}
 
 // 8. Closing
 L.summary(ctx, {
@@ -109,4 +121,4 @@ L.summary(ctx, {
 });
 
 L.validate(ctx);
-pres.writeFile({ fileName: path.join(root, 'ミテハナさん_発表スライド.pptx') });
+pres.writeFile({ fileName: path.join(root, process.env.OUTPUT_FILE || 'ミテハナさん_発表スライド.pptx') });
