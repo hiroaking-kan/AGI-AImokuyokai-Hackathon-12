@@ -5,8 +5,9 @@ dist-server/
 .env.*
 !.env.example
 .env.local
-# All runtime inventory and history are generated from source defaults on first start.
 server/data/
+.vercel/
+.clasp.json
 test-results/
 playwright-report/
 *.log
