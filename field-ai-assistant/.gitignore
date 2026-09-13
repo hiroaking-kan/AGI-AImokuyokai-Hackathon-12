@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-server/
+.env
+.env.*
+!.env.example
+.env.local
+# All runtime inventory and history are generated from source defaults on first start.
+server/data/
+test-results/
+playwright-report/
+*.log
