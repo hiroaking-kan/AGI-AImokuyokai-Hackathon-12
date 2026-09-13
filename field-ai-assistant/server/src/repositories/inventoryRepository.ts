@@ -28,10 +28,11 @@ export class InventoryRepository {
     let initial = false;
     try {
       state = JSON.parse(await readFile(join(directory, 'state.json'), 'utf8')) as InventoryState;
+      const ids = Array.isArray(state.products) ? state.products.map(p => p.id) : [];
       if (state.schemaVersion !== 1 || !Array.isArray(state.products) || !Array.isArray(state.history)
-        || !state.revisions || !state.manualRequests || state.products.length !== 3
-        || new Set(state.products.map(p => p.id)).size !== 3
-        || state.products.some(p => !INITIAL_PRODUCTS.some(seed => seed.id === p.id)
+        || !state.revisions || !state.manualRequests
+        || new Set(ids).size !== ids.length
+        || state.products.some(p => typeof p.id !== 'string' || !p.id
           || !Number.isSafeInteger(p.quantity) || p.quantity < 0
           || !Number.isSafeInteger(state.revisions[p.id]))) {
         throw new Error('在庫データの形式が正しくありません。state.jsonを確認してください。');

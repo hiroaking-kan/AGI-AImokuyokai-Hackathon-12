@@ -114,6 +114,51 @@ test('cancel and confirm are serialized and cannot both succeed after a commit',
   assert.equal((await service.getProduct('chair-001')).quantity, 15);
 });
 
+test('register prepare does not persist until confirm; confirm adds product and is idempotent', async () => {
+  const { directory, service } = await fixture();
+  const pending = await service.prepare({ action: 'register', name: 'ホワイトボード', category: 'other', quantity: 1, location: '第1会議室' });
+  assert.equal(pending.action, 'register');
+  assert.equal(pending.beforeQuantity, 0);
+  assert.equal(pending.afterQuantity, 1);
+  assert.equal(pending.productName, 'ホワイトボード');
+  assert.equal(pending.category, 'other');
+  assert.equal(pending.location, '第1会議室');
+  assert.match(pending.productId, /^item-/);
+  assert.equal((await service.getProducts()).length, 3);
+  const [first, second] = await Promise.all([service.confirm(pending.id), service.confirm(pending.id)]);
+  assert.deepEqual(first, second);
+  const products = await service.getProducts();
+  assert.equal(products.length, 4);
+  const created = products.find(item => item.id === pending.productId);
+  assert.equal(created?.name, 'ホワイトボード');
+  assert.equal(created?.categoryJa, '備品');
+  assert.equal(created?.quantity, 1);
+  assert.equal(created?.location, '第1会議室');
+  const history = await service.getHistory();
+  assert.equal(history.length, 1);
+  assert.equal(history[0].action, 'register');
+  assert.equal(history[0].source, 'ai');
+  assert.equal(history[0].beforeQuantity, 0);
+  assert.equal(history[0].afterQuantity, 1);
+  const reopened = new InventoryService(await InventoryRepository.create(directory));
+  assert.equal((await reopened.getProducts()).length, 4);
+  assert.equal((await reopened.confirm(pending.id)).product.quantity, 1);
+  assert.equal((await reopened.getHistory()).length, 1);
+});
+
+test('register prepare rejects missing name, non-positive quantity and unknown category; cancel does not add', async () => {
+  const { service } = await fixture();
+  await assert.rejects(service.prepare({ action: 'register', name: '', category: 'other', quantity: 1 }));
+  await assert.rejects(service.prepare({ action: 'register', name: 'ホワイトボード', category: 'other', quantity: 0 }));
+  await assert.rejects(service.prepare({ action: 'register', name: 'ホワイトボード', category: 'other', quantity: -1 }));
+  await assert.rejects(service.prepare({ action: 'register', name: 'ホワイトボード', category: 'gadget' as 'other', quantity: 1 }));
+  const pending = await service.prepare({ action: 'register', name: '延長コード', category: 'other', quantity: 2 });
+  assert.deepEqual(await service.cancel(pending.id), { cancelled: true });
+  await assert.rejects(service.confirm(pending.id), /確認待ち/);
+  assert.equal((await service.getProducts()).length, 3);
+  assert.deepEqual(await service.getHistory(), []);
+});
+
 test('failed disk commit leaves stock and history unchanged and allows retry', async () => {
   const { directory, service } = await fixture();
   const pending = await service.prepare({ productId: 'chair-001', quantity: 5, action: 'shipment' });

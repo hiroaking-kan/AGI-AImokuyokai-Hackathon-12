@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Action, ConfirmResult, InventoryChange, ManualRequest, PrepareRequest, Product } from '../../../shared/types.js';
+import type { Action, Category, ConfirmResult, InventoryChange, ManualRequest, PrepareRequest, Product } from '../../../shared/types.js';
 import { InventoryRepository, type InventoryState } from '../repositories/inventoryRepository.js';
 
 export class InventoryError extends Error {
@@ -13,6 +13,8 @@ const aliases: Record<string, string> = {
 };
 type Pending = { change: InventoryChange; revision: number; expiresAt: number };
 const PENDING_TTL = 10 * 60 * 1000;
+const CATEGORIES: Category[] = ['chair', 'desk', 'monitor', 'other'];
+const CATEGORY_JA: Record<Category, string> = { chair: '椅子', desk: 'デスク', monitor: 'モニター', other: '備品' };
 
 function text(value: unknown, label: string, maximum = 200): string {
   if (typeof value !== 'string' || !value.trim() || value.length > maximum)
@@ -38,7 +40,21 @@ export class InventoryService {
     return this.repository.read(state => state.products.find(item => item.category === category)!);
   }
 
+  private buildRegister(state: InventoryState, input: PrepareRequest): InventoryChange {
+    const name = text(input?.name, '品名');
+    if (!input.category || !CATEGORIES.includes(input.category)) throw new InventoryError('カテゴリが正しくありません。');
+    if (!Number.isSafeInteger(input.quantity) || input.quantity < 1)
+      throw new InventoryError('数量は正の整数で入力してください。');
+    const location = input.location == null || input.location === '' ? undefined : text(input.location, '設置場所');
+    let productId = `item-${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+    while (state.products.some(item => item.id === productId)) productId = `item-${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+    return { id: randomUUID(), productId, productName: name, action: 'register', quantity: input.quantity,
+      beforeQuantity: 0, afterQuantity: input.quantity, source: 'ai', createdAt: new Date().toISOString(),
+      category: input.category, categoryJa: CATEGORY_JA[input.category], ...(location ? { location } : {}) };
+  }
+
   private buildChange(state: InventoryState, input: PrepareRequest): InventoryChange {
+    if (input.action === 'register') return this.buildRegister(state, input);
     const id = text(input?.productId, '商品');
     const actions: Action[] = ['shipment', 'restock', 'adjustment'];
     if (!actions.includes(input.action)) throw new InventoryError('操作内容が正しくありません。');
@@ -61,12 +77,27 @@ export class InventoryService {
       for (const [id, value] of this.pending) if (value.expiresAt <= now) this.pending.delete(id);
       if (this.pending.size >= 100) throw new InventoryError('未確認の変更が多すぎます。確認またはキャンセルしてください。', 429);
       const change = this.buildChange(state, input);
-      this.pending.set(change.id, { change, revision: state.revisions[change.productId], expiresAt: now + PENDING_TTL });
+      this.pending.set(change.id, { change, revision: state.revisions[change.productId] ?? 0, expiresAt: now + PENDING_TTL });
       return change;
     });
   }
 
   private apply(state: InventoryState, change: InventoryChange): ConfirmResult {
+    if (change.action === 'register') {
+      if (state.products.some(item => item.id === change.productId))
+        throw new InventoryError('同じ商品がすでに登録されています。', 409);
+      if (!change.category || !CATEGORIES.includes(change.category)) throw new InventoryError('カテゴリが正しくありません。');
+      const created: Product = { id: change.productId, name: change.productName, category: change.category,
+        categoryJa: change.categoryJa ?? CATEGORY_JA[change.category], quantity: change.afterQuantity,
+        ...(change.location ? { location: change.location } : {}) };
+      state.products.push(created);
+      state.revisions[created.id] = 1;
+      const history = { id: change.id, productId: created.id, productName: created.name,
+        beforeQuantity: 0, afterQuantity: created.quantity, change: created.quantity, action: 'register' as const,
+        source: change.source, createdAt: new Date().toISOString() };
+      state.history.push(history);
+      return { product: { ...created }, history };
+    }
     const current = product(state, change.productId);
     current.quantity = change.afterQuantity;
     state.revisions[current.id] += 1;
@@ -85,6 +116,11 @@ export class InventoryService {
       if (previous) return { product: { ...product(state, previous.productId), quantity: previous.afterQuantity }, history: previous };
       const pending = this.pending.get(id);
       if (!pending || pending.expiresAt <= Date.now()) throw new InventoryError('確認待ちの変更がありません。もう一度変更内容を指定してください。', 409);
+      if (pending.change.action === 'register') {
+        if (state.products.some(item => item.id === pending.change.productId))
+          throw new InventoryError('同じ商品がすでに登録されています。', 409);
+        return this.apply(state, pending.change);
+      }
       const current = product(state, pending.change.productId);
       if (state.revisions[current.id] !== pending.revision || current.quantity !== pending.change.beforeQuantity)
         throw new InventoryError('確認中に在庫が変更されました。現在庫を確認し、もう一度操作してください。', 409);

@@ -162,9 +162,9 @@ export function useGeminiLive(options: LiveOptions) {
                   result = decision?.decision === expected
                     ? await decision.promise
                     : { error: '変更案を提示した後の、利用者の明示的な承認または取消を確認できません。確認カードのボタンでも回答できます。' };
-                } else if (['get_products', 'get_product_by_category', 'get_inventory', 'prepare_inventory_change'].includes(name)) {
+                } else if (['get_products', 'get_product_by_category', 'get_inventory', 'prepare_inventory_change', 'prepare_new_product'].includes(name)) {
                   result = await optionsRef.current.onToolCall(name, call.args ?? {});
-                  if (name === 'prepare_inventory_change' && result && typeof result === 'object' && !('error' in result)) {
+                  if ((name === 'prepare_inventory_change' || name === 'prepare_new_product') && result && typeof result === 'object' && !('error' in result)) {
                     gate.prepare(callTurn); voiceResult = undefined;
                   }
                 } else result = { error: 'この操作には対応していません。' };
