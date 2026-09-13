@@ -73,3 +73,31 @@ test('Sheets: doPost uses one atomic commit and always releases the lock', () =>
   input.secret='wrong';assert.equal(f.context.doPost({postData:{contents:JSON.stringify(input)}}).status,403);
   assert.equal(commits,1);
 });
+
+test('Sheets: appended team columns are accepted and preserved during updates', () => {
+  const f=fixture();
+  f.tables.Products.rows[0].push('倉庫A');
+  const names=Object.keys(f.context.TABLES);
+  f.context.Sheets={Spreadsheets:{
+    get:()=>({sheets:names.map((title,i)=>({properties:{title,sheetId:i,gridProperties:{rowCount:1000}}}))}),
+    Values:{batchGet:()=>({valueRanges:names.map(name=>({values:[
+      [...f.context.TABLES[name],...(name==='Products'?['location']:[])],...f.tables[name].rows,
+    ]}))})},
+  }};
+  const tables=f.context.readTables('fixture');
+  f.context.operate(tables,'POST','/inventory/manual',{productId:'chair-001',quantity:1,reason:'棚卸し',requestId:randomUUID()},[]);
+  assert.equal(tables.Products.rows[0][4],21);
+  assert.equal(tables.Products.rows[0][6],'倉庫A');
+});
+
+test('Sheets: read-only requests do not wait for the write lock', () => {
+  const f=fixture();
+  Object.assign(f.context,{
+    PropertiesService:{getScriptProperties:()=>({getProperty:()=> 'fixture'})},
+    LockService:{getScriptLock:()=>({tryLock:()=>assert.fail('GET must not lock'),hasLock:()=>false})},
+    ContentService:{MimeType:{JSON:'json'},createTextOutput:(text:string)=>({setMimeType:()=>JSON.parse(text)})},
+    readTables:()=>structuredClone(f.tables),
+  });
+  const result=f.context.doPost({postData:{contents:JSON.stringify({secret:'fixture',method:'GET',path:'/products'})}});
+  assert.equal(result.status,200);assert.equal(result.data.length,3);
+});

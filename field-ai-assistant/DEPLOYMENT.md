@@ -6,15 +6,15 @@
 - 公開構成: Vercel（画面とAPI）→ Google Apps Script → Googleスプレッドシート
 - 初期DBは作成済み。接続先IDは所有者の設定値として管理するため、この公開リポジトリには掲載しません。
 - 公開URL: https://field-ai-assistant.vercel.app/（発行済み）
-- Google側の初回認証の完了と、下記「公開後の受入確認」の結果はまだ記録していません。確認した人が結果をこの節に追記してください。
+- Google初回認証と接続設定は完了しました。`/api/health` は `google-sheets` を返し、商品取得とGemini Liveのセッション確立を実環境で確認済みです。
 - Cloudflare、ローカルJSON、Vercelの一時ファイルシステムを公開環境のDBとして使用しません。
 
 ## Google側の設定（所有者のアカウントで実施）
 
 1. 作成済みの在庫DBを開き、「拡張機能 → Apps Script」でこのDB用のスクリプトを作成します。
 2. `apps-script/Code.gs` を同名ファイルにコピーします。プロジェクト設定でマニフェストの表示を有効にし、`apps-script/appsscript.json` を反映します。高度なサービスの Google Sheets API v4 を有効にします。
-3. プロジェクト設定の「スクリプト プロパティ」に `SPREADSHEET_ID` と `SHEETS_API_SECRET` を登録します。後者はランダムな共有秘密値です。GitHubやクライアントコードには記載しません。
-4. `setupCheck` を実行し、Googleの権限許可を行います。ログの `Spreadsheet connection OK` を確認します。
+3. `setupCheck` を実行し、Googleの権限許可を行います。紐付いたシートの `SPREADSHEET_ID` とランダムな `SHEETS_API_SECRET` が、未設定の場合だけスクリプトプロパティへ保存されます。既存値は上書きしません。
+4. ログの `Spreadsheet connection OK` を確認します。プロジェクト設定のスクリプトプロパティで接続秘密値を確認し、Vercel側へ設定します。GitHubやクライアントコードには記載しません。
 5. ウェブアプリとしてデプロイします。実行ユーザーは「自分」、アクセスできるユーザーは「全員」。アプリからのAPI通信は共有秘密値で認証します。発行された `/exec` URLを控えます。
 
 以後は同じスクリプトプロジェクトとデプロイを更新します。複数のスクリプトプロジェクトから同じDBへ書き込むと、ScriptLockを共有できません。
@@ -47,7 +47,7 @@
 
 ## DBの構造と運用範囲
 
-Productsは商品と現在庫、Historyは更新履歴、Pendingは確認状態、Requestsは手動更新の重複防止結果です。見出しと商品IDは変更しないでください。アプリの更新はScriptLock内でまとめ、Sheetsの単一 `batchUpdate` で在庫・履歴・確認状態を反映します。
+Productsは商品と現在庫、Historyは更新履歴、Pendingは確認状態、Requestsは手動更新の重複防止結果です。必須列の見出し・順序と商品IDは変更しないでください。必須列の右側への列追加には対応し、Productsの追加列（例: location）の値を保持します。アプリの更新はScriptLock内でまとめ、Sheetsの単一 `batchUpdate` で在庫・履歴・確認状態を反映します。
 
 在庫変更はアプリから行ってください。シートを人が直接編集する操作はScriptLockを経由せず、履歴とrevisionも自動更新されません。これは少人数のハッカソン向けDBです。履歴は読み取り時に全件取得するため、大量データでの運用は別途設計が必要です。
 

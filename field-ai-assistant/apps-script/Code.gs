@@ -9,8 +9,9 @@ var TABLES = {
 
 function setupCheck() {
   var props = PropertiesService.getScriptProperties();
-  if (!props.getProperty('SPREADSHEET_ID') || !props.getProperty('SHEETS_API_SECRET'))
-    throw new Error('Script Properties に SPREADSHEET_ID と SHEETS_API_SECRET を設定してください。');
+  // Run once from the owner's bound script editor. Existing credentials persist.
+  if (!props.getProperty('SPREADSHEET_ID')) props.setProperty('SPREADSHEET_ID', SpreadsheetApp.getActiveSpreadsheet().getId());
+  if (!props.getProperty('SHEETS_API_SECRET')) props.setProperty('SHEETS_API_SECRET', Utilities.getUuid() + Utilities.getUuid());
   readTables(props.getProperty('SPREADSHEET_ID'));
   console.log('Spreadsheet connection OK');
 }
@@ -23,7 +24,8 @@ function doPost(event) {
     var props = PropertiesService.getScriptProperties();
     var secret = props.getProperty('SHEETS_API_SECRET');
     if (!secret || input.secret !== secret) fail('認証できません。', 403);
-    if (!lock.tryLock(10000)) fail('別の更新を処理中です。もう一度お試しください。', 409);
+    // Reads see atomic Sheets commits and do not need to queue behind each other.
+    if (input.method !== 'GET' && !lock.tryLock(10000)) fail('別の更新を処理中です。もう一度お試しください。', 409);
     var id = props.getProperty('SPREADSHEET_ID');
     var tables = readTables(id);
     var writes = [];
@@ -50,7 +52,7 @@ function readTables(id) {
   var tables = {};
   names.forEach(function(name, index) {
     var values = ranges[index].values || [];
-    if (JSON.stringify(values[0]) !== JSON.stringify(TABLES[name])) fail(name + ' の見出しが一致しません。', 503);
+    if (JSON.stringify((values[0] || []).slice(0, TABLES[name].length)) !== JSON.stringify(TABLES[name])) fail(name + ' の必須列を確認してください。', 503);
     var sheet = metadata.sheets.find(function(s) { return s.properties.title === name; });
     tables[name] = { id: sheet.properties.sheetId, rows: values.slice(1), capacity: sheet.properties.gridProperties.rowCount };
   });
