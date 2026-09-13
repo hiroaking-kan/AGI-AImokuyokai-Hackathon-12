@@ -58,6 +58,28 @@ test('Sheets: strings beginning with = are stored as text, never formulas', () =
   assert.ok(values.some(x=>'stringValue' in x.userEnteredValue && String(x.userEnteredValue.stringValue).startsWith('=IMPORTXML')));
   assert.ok(values.every(x=>!('formulaValue' in x.userEnteredValue)));
 });
+test('Sheets: register prepare does not persist; confirm appends product and is replay-safe', () => {
+  const f = fixture();
+  const pending = f.call<InventoryChange>('/inventory/prepare', { action: 'register', name: 'ホワイトボード', category: 'other', quantity: 1, location: '第1会議室' });
+  assert.equal(pending.action, 'register');
+  assert.equal(pending.beforeQuantity, 0);
+  assert.equal(pending.afterQuantity, 1);
+  assert.equal(pending.categoryJa, '備品');
+  assert.match(pending.productId, /^item-/);
+  assert.equal(f.tables.Products.rows.length, 3);
+  const result = f.call<ConfirmResult>('/inventory/confirm', { pendingId: pending.id });
+  assert.equal(result.product.name, 'ホワイトボード');
+  assert.equal(result.product.category, 'other');
+  assert.equal(result.product.quantity, 1);
+  assert.equal(result.product.location, '第1会議室');
+  assert.equal(result.history.action, 'register');
+  assert.equal(result.history.source, 'ai');
+  assert.equal(result.history.beforeQuantity, 0);
+  assert.equal(f.tables.Products.rows.length, 4);
+  assert.equal(f.tables.Products.rows[3][5], 1);
+  assert.equal(f.call<ConfirmResult>('/inventory/confirm', { pendingId: pending.id }).product.quantity, 1);
+  assert.equal(f.tables.History.rows.length, 1);
+});
 test('Sheets: doPost uses one atomic commit and always releases the lock', () => {
   const f=fixture();let commits=0;let released=0;
   Object.assign(f.context,{

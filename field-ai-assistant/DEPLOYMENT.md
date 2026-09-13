@@ -18,6 +18,8 @@
 
 以後は同じスクリプトプロジェクトとデプロイを更新します。複数のスクリプトプロジェクトから同じDBへ書き込むと、ScriptLockを共有できません。
 
+新規登録を公開環境で使うときは、**先に** Productsシートの見出し7列目へ `location` を追加し（`id,name,category,categoryJa,quantity,revision,location`）、**その後に** `apps-script/Code.gs` を再デプロイしてください。見出し追加より先に新コードをデプロイすると、見出し不一致で全APIが503になります。既存行の location は空のままで構いません。
+
 ## Vercel側の設定
 
 対象は非商用ハッカソン用の `field-ai-assistant` プロジェクト、本番環境です。Vercel Hobbyは非商用個人用途の範囲で使用します。商用に転用する場合はプランを再確認してください。

@@ -1,7 +1,7 @@
 // Google Sheets is the shared database. All application writes use a script lock
 // and a single atomic Sheets batchUpdate (stock + history + replay result).
 var TABLES = {
-  Products: ['id', 'name', 'category', 'categoryJa', 'quantity', 'revision'],
+  Products: ['id', 'name', 'category', 'categoryJa', 'quantity', 'revision', 'location'],
   History: ['id', 'productId', 'productName', 'change', 'beforeQuantity', 'afterQuantity', 'action', 'source', 'reason', 'createdAt'],
   Pending: ['id', 'changeJson', 'revision', 'expiresAt', 'status'],
   Requests: ['id', 'fingerprint', 'resultJson']
@@ -69,7 +69,11 @@ function rowWrite(table, index, values, writes) {
   table.rows[index] = values;
 }
 function append(table, values, writes) { rowWrite(table, table.rows.length, values, writes); }
-function publicProduct(row) { return { id: row[0], name: row[1], category: row[2], categoryJa: row[3], quantity: Number(row[4]) }; }
+function publicProduct(row) {
+  var product = { id: row[0], name: row[1], category: row[2], categoryJa: row[3], quantity: Number(row[4]) };
+  if (row[6]) product.location = String(row[6]);
+  return product;
+}
 function historyObject(row) {
   var entry = {};
   TABLES.History.forEach(function(key, i) { if (row[i] !== undefined && row[i] !== '') entry[key] = row[i]; });
@@ -78,7 +82,13 @@ function historyObject(row) {
 }
 function operate(tables, method, path, body, writes) {
   var products = tables.Products.rows;
-  if (products.length !== 3 || products.some(function(row) { return !Number.isSafeInteger(Number(row[4])) || Number(row[4]) < 0 || !Number.isSafeInteger(Number(row[5])); })) fail('在庫データを確認してください。', 503);
+  var seenIds = {};
+  if (products.some(function(row) {
+    var id = row[0] == null ? '' : String(row[0]);
+    if (!id || seenIds[id] || !Number.isSafeInteger(Number(row[4])) || Number(row[4]) < 0 || !Number.isSafeInteger(Number(row[5])) || Number(row[5]) < 0) return true;
+    seenIds[id] = true;
+    return false;
+  })) fail('在庫データを確認してください。', 503);
   if (method === 'GET') {
     if (path === '/health') return { ok: true, database: 'google-sheets' };
     if (path === '/products') return products.map(publicProduct);
@@ -94,6 +104,22 @@ function operate(tables, method, path, body, writes) {
   }
   if (method !== 'POST') fail('この操作には対応していません。', 405);
   var now = Date.now();
+  if (path === '/inventory/prepare' && body.action === 'register') {
+    var name = text(body.name, '品名');
+    var categoryJa = { chair: '椅子', desk: 'デスク', monitor: 'モニター', other: '備品' }[body.category];
+    if (!categoryJa) fail('カテゴリが正しくありません。');
+    if (!Number.isSafeInteger(body.quantity) || body.quantity < 1) fail('数量は正の整数で入力してください。');
+    var location = body.location == null || body.location === '' ? '' : text(body.location, '設置場所');
+    var newId;
+    do { newId = 'item-' + String(Utilities.getUuid()).replace(/-/g, '').slice(0, 8); }
+    while (products.some(function(row) { return row[0] === newId; }));
+    var registerChange = { id: Utilities.getUuid(), productId: newId, productName: name, action: 'register', quantity: body.quantity,
+      beforeQuantity: 0, afterQuantity: body.quantity, source: 'ai', createdAt: new Date(now).toISOString(),
+      category: body.category, categoryJa: categoryJa, location: location };
+    if (tables.Pending.rows.filter(function(row) { return row[4] === 'pending' && Number(row[3]) > now; }).length >= 100) fail('未確認の変更が多すぎます。', 429);
+    append(tables.Pending, [registerChange.id, JSON.stringify(registerChange), 0, now + 600000, 'pending'], writes);
+    return registerChange;
+  }
   if (path === '/inventory/prepare' || path === '/inventory/manual') {
     var manual = path === '/inventory/manual';
     var productId = text(body.productId, '商品');
@@ -133,9 +159,11 @@ function operate(tables, method, path, body, writes) {
     var completed = tables.History.rows.find(function(row) { return row[0] === pendingId; });
     var changeData = JSON.parse(pending[1]);
     var productIndex = products.findIndex(function(row) { return row[0] === changeData.productId; });
-    if (productIndex < 0) fail('商品が見つかりません。', 409);
+    var isRegister = changeData.action === 'register';
+    if (productIndex < 0 && !isRegister) fail('商品が見つかりません。', 409);
     if (completed) {
       if (path === '/inventory/cancel') fail('この変更はすでに確定しています。', 409);
+      if (productIndex < 0) fail('商品が見つかりません。', 409);
       var old = historyObject(completed);
       var item = publicProduct(products[productIndex]); item.quantity = old.afterQuantity;
       return { product: item, history: old };
@@ -145,6 +173,17 @@ function operate(tables, method, path, body, writes) {
       return { cancelled: true };
     }
     if (pending[4] !== 'pending' || Number(pending[3]) <= now) fail('確認が期限切れかキャンセル済みです。', 409);
+    if (isRegister) {
+      if (productIndex >= 0) fail('同じ商品がすでに登録されています。', 409);
+      var created = [changeData.productId, changeData.productName, changeData.category, changeData.categoryJa, changeData.afterQuantity, 1, changeData.location || ''];
+      append(tables.Products, created, writes);
+      var entry = { id: changeData.id, productId: changeData.productId, productName: changeData.productName,
+        change: changeData.afterQuantity - changeData.beforeQuantity, beforeQuantity: changeData.beforeQuantity, afterQuantity: changeData.afterQuantity,
+        action: 'register', source: changeData.source, reason: changeData.reason || '', createdAt: new Date().toISOString() };
+      append(tables.History, TABLES.History.map(function(key) { return entry[key]; }), writes);
+      pending[4] = 'confirmed'; rowWrite(tables.Pending, pendingIndex, pending, writes);
+      return { product: publicProduct(created), history: entry };
+    }
     if (Number(products[productIndex][5]) !== Number(pending[2]) || Number(products[productIndex][4]) !== changeData.beforeQuantity)
       fail('確認中に在庫が変更されました。現在庫を確認し、もう一度操作してください。', 409);
     var confirmed = applyChange(tables, productIndex, changeData, writes);
